@@ -15,11 +15,19 @@ dependencies = [
     { name = "pytest-asyncio" },
 ]
 
+[package.dev-dependencies]
+dev = [
+    { name = "aiosplice" },
+]
+
 [package.metadata]
 requires-dist = [
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
 ]
+
+[package.metadata.requires-dev]
+dev = [{ name = "aiosplice", virtual = "." }]
 
 [[package]]
 name = "backports-asyncio-runner"
