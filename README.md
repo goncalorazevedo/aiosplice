@@ -52,29 +52,44 @@ import asyncio
 import os
 import socket
 import fcntl
+import logging
+
 from asyncio import Task
 
 from aiosplice import aiosplice
 
-running_tasks: set[Task] = set()
 
+log = logging.getLogger(__name__)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+
+running_tasks: list[Task] = []
 
 class ConnectionClosed(Exception):
     """Raised when either end of the proxied connection closes."""
 
 
 async def forward_proxy(src: socket.socket, dst: socket.socket):
-    r_pipe, w_pipe = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
-    pipe_size = 1 << 20
-    fcntl.fcntl(r_pipe, fcntl.F_SETPIPE_SZ, pipe_size)
-    
+    r_pipe, w_pipe = os.pipe2(os.O_NONBLOCK | os.O_CLOEXEC)
+    desired_pipe_size = 1 << 20
+    try:
+        fcntl.fcntl(r_pipe, fcntl.F_SETPIPE_SZ, desired_pipe_size)
+    except OSError as e:
+        log.warning("F_SETPIPE_SZ failed for fd=%d: %s", r_pipe, e)
+
+    pipe_size = fcntl.fcntl(r_pipe, fcntl.F_GETPIPE_SZ)
+    if pipe_size < desired_pipe_size:
+        log.warning("pipe size truncated: wanted %d, got %d", desired_pipe_size, pipe_size)
+
     try:
         while True:
-            to_write = await aiosplice(src.fileno(), w_pipe, count=pipe_size, wait_on="read")
-            if to_write == 0:  # EOF
+            to_write = await aiosplice(src.fileno(), w_pipe, count = pipe_size, wait_on="read")
+            if to_write == 0: # EOF
                 raise ConnectionClosed(f"{src.fileno()} closed (read EOF)")
             while to_write > 0:
-                written = await aiosplice(r_pipe, dst.fileno(), count=pipe_size, wait_on="write")
+                written = await aiosplice(r_pipe, dst.fileno(), count = pipe_size, wait_on="write")
                 if written == 0:
                     raise ConnectionClosed(f"{dst.fileno()} closed (write EOF)")
                 to_write -= written
@@ -84,13 +99,13 @@ async def forward_proxy(src: socket.socket, dst: socket.socket):
 
 
 async def handle_client(conn: socket.socket, addr: tuple[str, int]):
+    log.info("Serving %s:%d", addr[0], addr[1])
+
     loop = asyncio.get_event_loop()
     srv_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-
-    conn.setblocking(False)
-    srv_conn.setblocking(False)
-
     await loop.sock_connect(srv_conn, ("localhost", 25000))
+
+    srv_conn.setblocking(False)
 
     try:
         async with asyncio.TaskGroup() as tg:
@@ -101,6 +116,7 @@ async def handle_client(conn: socket.socket, addr: tuple[str, int]):
     except* OSError:
         pass
     finally:
+        log.info("Finished serving %s:%d", addr[0], addr[1])
         conn.close()
         srv_conn.close()
 
@@ -108,19 +124,16 @@ async def handle_client(conn: socket.socket, addr: tuple[str, int]):
 async def server():
     listen_socket = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     listen_socket.setsockopt(socket.SOL_SOCKET, socket.SO_REUSEADDR, 1)
-    listen_socket.bind(("localhost", 30000))
+    listen_socket.bind(("localhost", 35000))
+    log.info("Listening on %s:%d", "localhost", 35000)
     listen_socket.setblocking(False)
     listen_socket.listen()
     loop = asyncio.get_event_loop()
     while True:
-        try:
-            conn, addr = await loop.sock_accept(listen_socket)
-        except OSError:
-            continue
+        conn, addr = await loop.sock_accept(listen_socket)
+        conn.setblocking(False)
         task = loop.create_task(handle_client(conn, addr))
-        running_tasks.add(task)
-        task.add_done_callback(running_tasks.discard)
-
+        running_tasks.append(task)
 
 asyncio.run(server())
 ```
