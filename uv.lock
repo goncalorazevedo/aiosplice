@@ -10,24 +10,22 @@ resolution-markers = [
 name = "aiosplice"
 version = "0.1.0"
 source = { virtual = "." }
-dependencies = [
-    { name = "pytest" },
-    { name = "pytest-asyncio" },
-]
 
 [package.dev-dependencies]
 dev = [
     { name = "aiosplice" },
+    { name = "pytest" },
+    { name = "pytest-asyncio" },
 ]
 
 [package.metadata]
-requires-dist = [
+
+[package.metadata.requires-dev]
+dev = [
+    { name = "aiosplice", virtual = "." },
     { name = "pytest", specifier = ">=9.1.1" },
     { name = "pytest-asyncio", specifier = ">=1.4.0" },
 ]
-
-[package.metadata.requires-dev]
-dev = [{ name = "aiosplice", virtual = "." }]
 
 [[package]]
 name = "backports-asyncio-runner"

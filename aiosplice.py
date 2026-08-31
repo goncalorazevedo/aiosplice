@@ -41,8 +41,6 @@ async def aiosplice(
         src: int,
         dst: int,
         count: int,
-        offset_src: Optional[int] = None,
-        offset_dst: Optional[int] = None,
         flags: int = 0,
         wait_on: str = "read",
 ) -> int:
@@ -61,8 +59,6 @@ async def aiosplice(
         src: Source file descriptor to splice from.
         dst: Destination file descriptor to splice to.
         count: Number of bytes to attempt to splice.
-        offset_src: Offset into src, or None to use/advance its file position.
-        offset_dst: Offset into dst, or None to use/advance its file position.
         flags: Extra os.splice() flags; os.SPLICE_F_NONBLOCK is added automatically.
         wait_on: Which fd to wait on when splice() would block -- "read" waits
             on src becoming readable, "write" waits on dst becoming writable.
@@ -91,7 +87,7 @@ async def aiosplice(
 
     while True:
         try:
-            return os.splice(src, dst, count, offset_src, offset_dst, flags)
+            return os.splice(src, dst, count, None, None, flags)
         except BlockingIOError:
             await _wait_ready(loop, src if wait_on == "read" else dst, wait_on)
         except InterruptedError:

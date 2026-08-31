@@ -21,8 +21,6 @@ async def aiosplice(
     src: int,
     dst: int,
     count: int,
-    offset_src: int | None = None,
-    offset_dst: int | None = None,
     flags: int = 0,
     wait_on: str = "read",
 ) -> int:
@@ -53,6 +51,7 @@ Below is an example of a zero-copy TCP proxy: each direction of the connection s
 import asyncio
 import os
 import socket
+import fcntl
 from asyncio import Task
 
 from aiosplice import aiosplice
@@ -65,17 +64,17 @@ class ConnectionClosed(Exception):
 
 
 async def forward_proxy(src: socket.socket, dst: socket.socket):
-    r_pipe, w_pipe = os.pipe()
-    for pipe in (r_pipe, w_pipe):
-        os.set_blocking(pipe, False)
-
+    r_pipe, w_pipe = os.pipe2(os.O_CLOEXEC | os.O_NONBLOCK)
+    pipe_size = 1 << 20
+    fcntl.fcntl(r_pipe, fcntl.F_SETPIPE_SZ, pipe_size)
+    
     try:
         while True:
-            to_write = await aiosplice(src.fileno(), w_pipe, count = 64 * 1024, wait_on="read")
-            if to_write == 0: # EOF
+            to_write = await aiosplice(src.fileno(), w_pipe, count=pipe_size, wait_on="read")
+            if to_write == 0:  # EOF
                 raise ConnectionClosed(f"{src.fileno()} closed (read EOF)")
             while to_write > 0:
-                written = await aiosplice(r_pipe, dst.fileno(), count = 64*1024, wait_on="write")
+                written = await aiosplice(r_pipe, dst.fileno(), count=pipe_size, wait_on="write")
                 if written == 0:
                     raise ConnectionClosed(f"{dst.fileno()} closed (write EOF)")
                 to_write -= written
@@ -87,10 +86,11 @@ async def forward_proxy(src: socket.socket, dst: socket.socket):
 async def handle_client(conn: socket.socket, addr: tuple[str, int]):
     loop = asyncio.get_event_loop()
     srv_conn = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
-    await loop.sock_connect(srv_conn, ("localhost", 25000))
 
     conn.setblocking(False)
     srv_conn.setblocking(False)
+
+    await loop.sock_connect(srv_conn, ("localhost", 25000))
 
     try:
         async with asyncio.TaskGroup() as tg:
@@ -120,6 +120,7 @@ async def server():
         task = loop.create_task(handle_client(conn, addr))
         running_tasks.add(task)
         task.add_done_callback(running_tasks.discard)
+
 
 asyncio.run(server())
 ```
