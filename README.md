@@ -22,19 +22,20 @@ async def aiosplice(
     dst: int,
     count: int,
     flags: int = 0,
-    wait_on: str = "read",
+    wait_on: Literal["read", "write"] = "read",
 ) -> int:
 ```
 All arguments are transparently passed to [os.splice()](https://docs.python.org/3/library/os.html#os.splice) (see also [splice(2)](https://man7.org/linux/man-pages/man2/splice.2.html)) aside from `flags` and `wait_on`. 
 - `flags` adds `SPLICE_F_NONBLOCK` to the underlying splice syscall.
 - `wait_on` takes "read" or "write" string literals to communicate which fd to wait on when the splice would block.
 
-
 It works by calling os.splice() in a loop; on BlockingIOError it registers with the event loop's reader/writer callback 
 for whichever fd wait_on points to, awaits readiness, and retries without blocking the event-loop.
 
-There is no timeout and no detection of a wrong choice. If you pick the side that isn't actually going to block, 
-the registered callback may never fire and the call hangs indefinitely.
+There is no timeout and no detection of a wrong wait_on choice, if you pick the side that isn't actually going to block
+the registered callback may never fire and the call might hang indefinitely. Additionally, the pipe should be drained 
+completely between read-side calls, else it might spin the CPU, for example, if the awaited side is ready but the other 
+end would block.
 
 ### Constraints
 The method does not enforce any validation, but some constraints, other than the `slice(2)` constraints, exist:

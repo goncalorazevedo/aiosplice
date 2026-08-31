@@ -1,4 +1,4 @@
-from typing import Optional
+from typing import Literal
 
 import asyncio
 import sys
@@ -42,7 +42,7 @@ async def aiosplice(
         dst: int,
         count: int,
         flags: int = 0,
-        wait_on: str = "read",
+        wait_on: Literal["write", "read"] = "read",
 ) -> int:
     """Async wrapper around os.splice() for non-blocking fds.
 
